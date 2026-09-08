@@ -73,5 +73,113 @@ Internet
 [ Privat subnät: snet-db (10.0.2.0/24) ]
    Förberett för lagring i v37, ingen publik åtkomstväg
 ```
+# Novatrix – VG (v36)
+## Introduktion
+
+I denna uppgift har jag implementerat en djupförsvarsmodell för Novatrix nätverksinfrastruktur i Azure. Hela nätverket, subnäten, säkerhetsgrupperna och den administrativa åtkomsten är definierade som kod i skriptet `deploy-novatrix-v36-final.sh` för att miljön enkelt ska kunna återskapas direkt från repot. Lösningen följer principen om **defense in depth** genom att kombinera flera säkerhetslager: nätverkssegmentering, nätverkssäkerhetsgrupper (NSG:er), begränsad administrativ åtkomst via Azure Bastion, och förberedelse för framtida skydd av dataskiktet.
 
 ---
+
+## Nätverksdesign och segmentering
+
+För att undvika ett platt nätverk där alla resurser når varandra har jag delat upp det virtuella nätverket **vnet-novatrix** (10.0.0.0/16) i tre isolerade subnät:
+
+| Subnät               | Adressrymd      | Syfte                                      |
+|----------------------|-----------------|--------------------------------------------|
+| `snet-web`           | 10.0.1.0/24     | Dedikerat subnät för webbservern och offentliga tjänster. |
+| `snet-db`            | 10.0.2.0/24     | Isolerat subnät reserverat för databasskiktet.          |
+| `AzureBastionSubnet` | 10.0.3.0/26     | Avskilt subnät för säker administration via Azure Bastion. |
+
+Trafiken mellan och inom subnäten styrs via två **Network Security Groups (NSG:er)**:
+
+- **`nsg-web`** – associerad med `snet-web`. Regler:
+  - Tillåter inkommande webbtrafik på port 80 (HTTP) och port 443 (HTTPS) från `Internet`.
+  - Inkommande SSH på port 22 är begränsat så att det **enbart** tillåts om trafiken kommer internt från `AzureBastionSubnet` (10.0.3.0/26).
+
+- **`nsg-db`** – associerad med `snet-db`. Har **inga inkommande regler** definierade, vilket innebär att all direkt inkommande trafik från internet eller andra subnät nekas enligt Azures standardregel (default deny). Detta skapar strikt isolering för det framtida databasskiktet.
+
+### Viktigt om NSG-placering
+
+NSG:erna är kopplade på **subnätnivå**, vilket innebär att reglerna tillämpas på all trafik till och från respektive subnät, oavsett vilka resurser som finns där. För att undvika att en extra NSG skapas automatiskt på VM:ens nätverksgränssnitt (NIC) används parametern `--nsg ""` vid skapandet av VM:en. Detta säkerställer att endast subnätets NSG styr trafiken och att inga motstridiga regler uppstår.
+
+---
+
+## Begränsad administrativ åtkomst (Bastion-design)
+
+Inga administrativa portar är öppna mot det publika internet. Istället för en traditionell hoppvärd med en publik IP-adress har jag konfigurerat **Azure Bastion** (`bastion-novatrix`). Det gör att jag kan ansluta säkert via SSH till `vm-novatrix-web` direkt genom Azure Portal eller Azure CLI utan att exponera SSH-porten.
+
+Trafiken krypteras över TLS via port 443 till Bastion-tjänsten, som i sin tur vidarebefordrar SSH-sessionen internt över `snet-web`. Eftersom Azure Bastion är en fullständigt hanterad tjänst ansvarar Microsoft för patchning och säkerhet av själva bastion-värden, vilket minskar risken för sårbarheter i OS eller SSH-demonen.
+
+---
+
+## Hotbild och skyddsmekanismer
+
+Designen skyddar i första hand mot följande tre hotkategorier:
+
+### 1. Slumpmässiga portskanningar och brute force-attacker mot SSH
+
+**Hot:** Angripare skannar internet efter IP-adresser med öppen port 22 för att göra automatiserade inloggningsförsök med lösenord eller nycklar.
+
+**Skydd:** SSH-porten på `vm-novatrix-web` är helt stängd mot internet i `nsg-web`. Nätverkssäkerhetsgruppen tillåter enbart SSH-anslutningar som härrör från IP-spannet `10.0.3.0/26` (AzureBastionSubnet).
+
+### 2. Horisontell förflyttning vid ett eventuellt intrång i webbskiktet
+
+**Hot:** Om en angripare lyckas ta sig in på webbservern via en sårbarhet i webbapplikationen försöker denne ofta röra sig vidare i nätverket för att nå databaser eller interna resurser.
+
+**Skydd:** Segmenteringen med `snet-db` och regleverket i `nsg-db` förhindrar oauktoriserad direktåtkomst till databasskiktet. Webbservern ligger i en avgränsad zon och kan inte nå administrativa gränssnitt eller andra känsliga delar av nätverket utan explicit tillåtna regler.
+
+### 3. Exponering av administrativa gränssnitt
+
+**Hot:** Traditionella hoppvärdar eller publika SSH-servrar kan drabbas av sårbarheter i OS eller SSH-demonen om de står oskyddade mot internet.
+
+**Skydd:** Genom att använda Azure Bastion som managed service sköts patchning och skydd av plattformen av Azure. SSH-protokollet exponeras aldrig externt utan nås enbart via autentiserade och krypterade sessioner.
+
+---
+
+## Nätverksskiss
+
+                    Internet
+                       |
+          HTTP/HTTPS (80/443)
+                       |
+                       v
+               [NSG: nsg-web]   (tillåter 80/443 från Internet,
+                       |        SSH enbart från Bastion-subnet)
+                       v
+                snet-web (10.0.1.0/24)
+                       |
+                       | (ingen direkt trafik)
+                       v
+                snet-db (10.0.2.0/24)
+                       |
+                       v
+               [NSG: nsg-db]   (default deny all trafik)
+
+------------------------------------------------------------------
+
+                    Användare
+                       |
+                       |  TLS (443)
+                       v  Azure Bastion
+                       |
+                       |  SSH (22) internt
+                       v  AzureBastionSubnet (10.0.3.0/26)
+                       |
+                       v  snet-web (VM)
+
+---
+
+## Återskapa nätverket från repot
+
+Nätverksinfrastrukturen körs upp idempotent via Azure CLI. Skriptet skapar alla resurser, konfigurerar NSG:er, VM, Bastion samt identitets- och rollhantering. Det är utformat för att kunna köras flera gånger utan att orsaka fel.
+
+### Krav
+
+- Azure-prenumeration med tillräckliga behörigheter (t.ex. Owner/Contributor).
+- Azure CLI installerat och inloggat (`az login`).
+
+### Kör skriptet
+
+```bash
+chmod +x deploy-novatrix-v36-final.sh
+./deploy-novatrix-v36-final.sh
