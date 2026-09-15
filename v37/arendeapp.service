@@ -1,0 +1,15 @@
+# systemd unit for the Flask backend (V37 Utokad).
+# Keeps the ticket backend running and restarts it if it stops.
+[Unit]
+Description=Novatrix arende backend (Flask)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=/opt/arendeapp
+ExecStart=/usr/bin/python3 /opt/arendeapp/app.py
+Restart=on-failure
+User=www-data
+
+[Install]
+WantedBy=multi-user.target
