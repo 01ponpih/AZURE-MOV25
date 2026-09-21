@@ -1,12 +1,15 @@
 param prefix string = 'novatrix'
 param location string = resourceGroup().location
-param vmSize string = 'Standard_B1s'
+param vmSize string = 'Standard_D2als_v6'
 param adminUsername string = 'azureuser'
 
 @secure()
 param adminPublicKey string
 
 param sshSourceAddressPrefix string
+
+@description('Object ID för säkerhetsgruppen azure-drift som ska ha åtkomst till Blob Storage')
+param adminGroupId string
 
 @allowed([
   'Standard_LRS'
@@ -154,7 +157,14 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
     supportsHttpsTrafficOnly: true
     minimumTlsVersion: 'TLS1_2'
     networkAcls: {
+      bypass: 'AzureServices'
       defaultAction: 'Deny'
+      ipRules: [
+        {
+          value: sshSourceAddressPrefix
+          action: 'Allow'
+        }
+      ]
       virtualNetworkRules: [
         {
           id: webSubnetRef.id
@@ -175,6 +185,18 @@ resource container 'Microsoft.Storage/storageAccounts/blobServices/containers@20
   name: containerName
   properties: {
     publicAccess: 'None'
+  }
+}
+
+var storageBlobDataContributorRole = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
+
+resource adminRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(storageAccount.id, adminGroupId, storageBlobDataContributorRole)
+  scope: storageAccount
+  properties: {
+    roleDefinitionId: storageBlobDataContributorRole
+    principalId: adminGroupId
+    principalType: 'Group'
   }
 }
 
