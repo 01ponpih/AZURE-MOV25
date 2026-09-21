@@ -1,0 +1,33 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "prefix": {
+      "value": "novatrix"
+    },
+    "location": {
+      "value": "swedencentral"
+    },
+    "vmSize": {
+      "value": "Standard_B1s"
+    },
+    "adminUsername": {
+      "value": "azureuser"
+    },
+    "adminPublicKey": {
+      "value": "SSH-Dummy"
+    },
+    "sshSourceAddressPrefix": {
+      "value": "IP-Dummy"
+    },
+    "storageSku": {
+      "value": "Standard_LRS"
+    },
+    "storageAccountName": {
+      "value": "stnovatrixponpih01"
+    },
+    "containerName": {
+      "value": "arenden"
+    }
+  }
+}

@@ -1,0 +1,138 @@
+#cloud-config
+package_update: true
+packages:
+  - nginx
+  - python3-venv
+  - python3-pip
+
+write_files:
+  - path: /var/www/html/index.html
+    content: |
+      <!DOCTYPE html>
+      <html lang="sv">
+      <head>
+        <meta charset="UTF-8">
+        <title>Novatrix AB - Kundtj&auml;nst</title>
+        <style>
+          body { font-family: sans-serif; max-width: 500px; margin: 60px auto; }
+          label { display: block; margin-top: 12px; }
+          input, textarea { width: 100%; padding: 8px; box-sizing: border-box; }
+          button { margin-top: 16px; padding: 10px 20px; }
+        </style>
+      </head>
+      <body>
+        <h1>Novatrix AB</h1>
+        <p>V&auml;lkommen till v&aring;r kundtj&auml;nst. Fyll i formul&auml;ret nedan s&aring; &aring;terkommer vi s&aring; fort vi kan.</p>
+        <form action="/submit" method="post" enctype="multipart/form-data">
+          <label for="namn">Namn</label>
+          <input type="text" id="namn" name="namn">
+          <label for="epost">E-post</label>
+          <input type="email" id="epost" name="epost">
+          <label for="meddelande">Meddelande</label>
+          <textarea id="meddelande" name="meddelande" rows="5"></textarea>
+          <label for="bilaga">Bilaga (valfritt)</label>
+          <input type="file" id="bilaga" name="bilaga">
+          <button type="submit">Skicka</button>
+        </form>
+      </body>
+      </html>
+
+  - path: /opt/novatrix-app/app.py
+    content: |
+      from flask import Flask, request
+      from azure.identity import DefaultAzureCredential
+      from azure.storage.blob import BlobServiceClient
+      import json, uuid, datetime
+
+      app = Flask(__name__)
+
+      STORAGE_ACCOUNT = "{{STORAGE_ACCOUNT}}"
+      CONTAINER = "{{CONTAINER_NAME}}"
+
+      credential = DefaultAzureCredential()
+      blob_service = BlobServiceClient(
+          account_url=f"https://{STORAGE_ACCOUNT}.blob.core.windows.net",
+          credential=credential
+      )
+      container_client = blob_service.get_container_client(CONTAINER)
+
+      @app.route("/health", methods=["GET"])
+      def health():
+          return "OK", 200
+
+      @app.route("/submit", methods=["POST"])
+      def submit():
+          arende_id = str(uuid.uuid4())
+          data = {
+              "id": arende_id,
+              "namn": request.form.get("namn"),
+              "epost": request.form.get("epost"),
+              "meddelande": request.form.get("meddelande"),
+              "tid": datetime.datetime.utcnow().isoformat()
+          }
+
+          container_client.upload_blob(
+              name=f"{arende_id}/arende.json",
+              data=json.dumps(data, ensure_ascii=True),
+              overwrite=True
+          )
+
+          if "bilaga" in request.files and request.files["bilaga"].filename:
+              fil = request.files["bilaga"]
+              container_client.upload_blob(
+                  name=f"{arende_id}/{fil.filename}",
+                  data=fil.stream.read(),
+                  overwrite=True
+              )
+
+          return f"Tack, ditt arende har tagits emot. Arende-id: {arende_id}", 200
+
+      if __name__ == "__main__":
+          app.run(host="127.0.0.1", port=5000)
+
+  - path: /etc/systemd/system/novatrix-app.service
+    content: |
+      [Unit]
+      Description=Novatrix arendeformular backend
+      After=network.target
+
+      [Service]
+      ExecStart=/opt/novatrix-app/venv/bin/python /opt/novatrix-app/app.py
+      Restart=always
+      User=azureuser
+
+      [Install]
+      WantedBy=multi-user.target
+
+  - path: /etc/nginx/sites-available/default
+    content: |
+      server {
+        listen 80 default_server;
+        listen [::]:80 default_server;
+        root /var/www/html;
+        index index.html;
+
+        location / {
+          try_files $uri $uri/ =404;
+        }
+
+        location /submit {
+          proxy_pass http://127.0.0.1:5000/submit;
+          proxy_set_header Host $host;
+        }
+
+        location /health {
+          proxy_pass http://127.0.0.1:5000/health;
+        }
+      }
+
+runcmd:
+  - python3 -m venv /opt/novatrix-app/venv
+  - /opt/novatrix-app/venv/bin/pip install --upgrade pip
+  - /opt/novatrix-app/venv/bin/pip install flask azure-identity azure-storage-blob
+  - chown -R azureuser:azureuser /opt/novatrix-app
+  - systemctl daemon-reload
+  - systemctl enable novatrix-app
+  - systemctl restart novatrix-app
+  - systemctl enable nginx
+  - systemctl restart nginx
