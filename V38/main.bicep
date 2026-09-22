@@ -32,7 +32,7 @@ var publicIpName = 'pip-${prefix}-web'
 var nicName = 'nic-${prefix}-web'
 var vmName = 'vm-${prefix}-web'
 var blobDataContributorRoleId = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
-
+var storageBlobDataContributorRole = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', blobDataContributorRoleId)
 var cloudInitRaw = loadTextContent('cloud-init.yaml')
 var cloudInitWithStorage = replace(cloudInitRaw, '{{STORAGE_ACCOUNT}}', storageAccountName)
 var cloudInitFinal = replace(cloudInitWithStorage, '{{CONTAINER_NAME}}', containerName)
@@ -188,8 +188,6 @@ resource container 'Microsoft.Storage/storageAccounts/blobServices/containers@20
   }
 }
 
-var storageBlobDataContributorRole = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
-
 resource adminRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(storageAccount.id, adminGroupId, storageBlobDataContributorRole)
   scope: storageAccount
@@ -254,7 +252,7 @@ resource roleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(container.id, vm.id, blobDataContributorRoleId)
   scope: container
   properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', blobDataContributorRoleId)
+    roleDefinitionId: storageBlobDataContributorRole
     principalId: vm.identity.principalId
     principalType: 'ServicePrincipal'
   }
