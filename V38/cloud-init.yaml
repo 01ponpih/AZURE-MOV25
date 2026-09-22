@@ -12,28 +12,38 @@ write_files:
       <html lang="sv">
       <head>
         <meta charset="UTF-8">
-        <title>Novatrix AB - Kundtj&auml;nst</title>
+        <title>Novatrix AB - Support</title>
         <style>
-          body { font-family: sans-serif; max-width: 500px; margin: 60px auto; }
-          label { display: block; margin-top: 12px; }
-          input, textarea { width: 100%; padding: 8px; box-sizing: border-box; }
-          button { margin-top: 16px; padding: 10px 20px; }
+          body { font-family: sans-serif; background-color: #f0f2f5; margin: 0; padding: 20px; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+          .container { background: #ffffff; padding: 40px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 100%; max-width: 500px; box-sizing: border-box; }
+          h1 { text-align: center; color: #333; margin-top: 0; }
+          p { text-align: center; color: #555; margin-bottom: 25px; }
+          label { display: block; margin-top: 15px; font-weight: bold; color: #333; }
+          input, textarea { width: 100%; padding: 10px; margin-top: 5px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 5px; font-size: 1rem; }
+          button { margin-top: 25px; width: 100%; padding: 12px 20px; background-color: #0078d4; color: white; border: none; border-radius: 5px; font-size: 1.1rem; cursor: pointer; transition: 0.2s; }
+          button:hover { background-color: #005a9e; }
         </style>
       </head>
       <body>
-        <h1>Novatrix AB</h1>
-        <p>V&auml;lkommen till v&aring;r kundtj&auml;nst. Fyll i formul&auml;ret nedan s&aring; &aring;terkommer vi s&aring; fort vi kan.</p>
-        <form action="/submit" method="post" enctype="multipart/form-data">
-          <label for="namn">Namn</label>
-          <input type="text" id="namn" name="namn">
-          <label for="epost">E-post</label>
-          <input type="email" id="epost" name="epost">
-          <label for="meddelande">Meddelande</label>
-          <textarea id="meddelande" name="meddelande" rows="5"></textarea>
-          <label for="bilaga">Bilaga (valfritt)</label>
-          <input type="file" id="bilaga" name="bilaga">
-          <button type="submit">Skicka</button>
-        </form>
+        <div class="container">
+          <h1>Novatrix AB</h1>
+          <p>Hej! Fyll i uppgifterna nedan, vi svarar inom 24h.</p>
+          <form action="/submit" method="post" enctype="multipart/form-data">
+            <label for="namn">Namn</label>
+            <input type="text" id="namn" name="namn" required>
+            
+            <label for="epost">E-post</label>
+            <input type="email" id="epost" name="epost" required>
+            
+            <label for="meddelande">Meddelande</label>
+            <textarea id="meddelande" name="meddelande" rows="5" required></textarea>
+            
+            <label for="bilaga">Bifoga fil (om du vill)</label>
+            <input type="file" id="bilaga" name="bilaga">
+            
+            <button type="submit">Skicka</button>
+          </form>
+        </div>
       </body>
       </html>
 
@@ -72,7 +82,7 @@ write_files:
           }
 
           container_client.upload_blob(
-              name=f"{arende_id}/arende.json",
+              name=f"{arende_id}/kontakt.json",
               data=json.dumps(data, ensure_ascii=True),
               overwrite=True
           )
@@ -85,7 +95,33 @@ write_files:
                   overwrite=True
               )
 
-          return f"Tack, ditt arende har tagits emot. Arende-id: {arende_id}", 200
+          # Centrerad HTML-sida for bekraftelse utan a, a, o
+          html_response = f"""
+          <!DOCTYPE html>
+          <html lang="sv">
+          <head>
+            <meta charset="UTF-8">
+            <title>Tack!</title>
+            <style>
+              body {{ font-family: sans-serif; background-color: #f0f2f5; margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; }}
+              .success-box {{ background: #ffffff; padding: 50px; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.1); text-align: center; max-width: 500px; width: 100%; box-sizing: border-box; }}
+              h1 {{ color: #107c10; font-size: 3rem; margin-top: 0; margin-bottom: 10px; }}
+              p {{ color: #333; font-size: 1.2rem; margin-bottom: 20px; }}
+              .ref-box {{ background: #f3f2f1; padding: 15px; border-radius: 6px; font-family: monospace; font-size: 1.1rem; color: #000; word-break: break-all; }}
+            </style>
+          </head>
+          <body>
+            <div class="success-box">
+              <h1>Tack!</h1>
+              <p>Ditt case har nu skapats.</p>
+              <div class="ref-box">
+                <strong>Referens:</strong><br>{arende_id}
+              </div>
+            </div>
+          </body>
+          </html>
+          """
+          return html_response, 200
 
       if __name__ == "__main__":
           app.run(host="127.0.0.1", port=5000)
@@ -93,7 +129,7 @@ write_files:
   - path: /etc/systemd/system/novatrix-app.service
     content: |
       [Unit]
-      Description=Novatrix arendeformular backend
+      Description=Novatrix backend
       After=network.target
 
       [Service]
