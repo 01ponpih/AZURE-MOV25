@@ -1,6 +1,6 @@
 param prefix string = 'novatrix'
 param location string = resourceGroup().location
-param vmSize string = 'Standard_B2ats_v2'
+param vmSize string = 'Standard_D2ls_v6'
 param adminUsername string = 'azureuser'
 
 @secure()
@@ -194,7 +194,7 @@ resource adminRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01
   properties: {
     roleDefinitionId: storageBlobDataContributorRole
     principalId: adminGroupId
-    principalType: 'Group'
+    principalType: 'User'
   }
 }
 

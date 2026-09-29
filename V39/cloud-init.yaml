@@ -52,12 +52,11 @@ write_files:
       from flask import Flask, request
       from azure.identity import DefaultAzureCredential
       from azure.storage.blob import BlobServiceClient
-      import json, uuid, datetime, requests
+      import json, uuid, datetime, requests, base64
 
       app = Flask(__name__)
 
-      POWER_AUTOMATE_URL = "DIN_POWER_AUTOMATE_URL_HÄR"
-
+      POWER_AUTOMATE_URL = "DIN_POWER_AUTOMATE_URL_HÄR
       STORAGE_ACCOUNT = "{{STORAGE_ACCOUNT}}"
       CONTAINER = "{{CONTAINER_NAME}}"
 
@@ -81,6 +80,7 @@ write_files:
 
           has_attachment = False
           attachment_name = ""
+          attachment_base64 = ""
 
           data = {
               "id": arende_id,
@@ -99,11 +99,19 @@ write_files:
               fil = request.files["bilaga"]
               has_attachment = True
               attachment_name = fil.filename
+              
+              # Läs in filens data en gång
+              file_bytes = fil.stream.read()
+              
+              # Spara till Azure Storage
               container_client.upload_blob(
                   name=f"{arende_id}/{fil.filename}",
-                  data=fil.stream.read(),
+                  data=file_bytes,
                   overwrite=True
               )
+              
+              # Konvertera till Base64 för Power Automate
+              attachment_base64 = base64.b64encode(file_bytes).decode('utf-8')
 
           if POWER_AUTOMATE_URL and POWER_AUTOMATE_URL != "DIN_POWER_AUTOMATE_URL_HÄR":
               pa_payload = {
@@ -113,14 +121,14 @@ write_files:
                   "message": meddelande,
                   "created": datetime.datetime.utcnow().isoformat() + "Z",
                   "has_attachment": has_attachment,
-                  "attachment_name": attachment_name
+                  "attachment_name": attachment_name,
+                  "attachment_content_base64": attachment_base64
               }
               try:
-                  requests.post(POWER_AUTOMATE_URL, json=pa_payload, timeout=5)
+                  requests.post(POWER_AUTOMATE_URL, json=pa_payload, timeout=10)
               except Exception as e:
                   print(f"Fel vid anrop till Power Automate: {e}")
 
-          # Centrerad HTML-sida för bekräftelse
           html_response = f"""
           <!DOCTYPE html>
           <html lang="sv">
